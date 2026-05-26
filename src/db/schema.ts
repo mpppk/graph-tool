@@ -5,9 +5,7 @@ export const graphs = sqliteTable("graphs", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 
 export const nodes = sqliteTable("nodes", {
@@ -18,9 +16,7 @@ export const nodes = sqliteTable("nodes", {
   label: text("label").notNull(),
   x: real("x").notNull().default(0),
   y: real("y").notNull().default(0),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 
 export const edges = sqliteTable("edges", {
@@ -35,9 +31,7 @@ export const edges = sqliteTable("edges", {
     .notNull()
     .references(() => nodes.id, { onDelete: "cascade" }),
   label: text("label").notNull().default(""),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 
 export type Graph = typeof graphs.$inferSelect;

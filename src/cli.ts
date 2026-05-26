@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { createRouterClient } from "@orpc/server";
-import { APP_VERSION } from "./runtime-config";
 import { router } from "./router";
+import { APP_VERSION } from "./runtime-config";
 
 const HELP = `
 graph-tool v${APP_VERSION}
@@ -20,9 +20,7 @@ function printTable(rows: Record<string, unknown>[]): void {
     return;
   }
   const keys = Object.keys(rows[0]!);
-  const widths = keys.map((k) =>
-    Math.max(k.length, ...rows.map((r) => String(r[k] ?? "").length)),
-  );
+  const widths = keys.map((k) => Math.max(k.length, ...rows.map((r) => String(r[k] ?? "").length)));
   const pad = (s: string, w: number) => s.padEnd(w);
   console.log(keys.map((k, i) => pad(k, widths[i]!)).join("  "));
   console.log(widths.map((w) => "-".repeat(w)).join("  "));

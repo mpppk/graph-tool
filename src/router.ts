@@ -20,37 +20,33 @@ const graphCreate = os
   .handler(async ({ input }) => {
     const db = getDb();
     const id = crypto.randomUUID();
-    db.insert(schema.graphs).values({ id, ...input }).run();
+    db.insert(schema.graphs)
+      .values({ id, ...input })
+      .run();
     const graph = db.select().from(schema.graphs).where(eq(schema.graphs.id, id)).get();
     if (!graph) throw new Error("Failed to create graph");
     return graph;
   });
 
-const graphGet = os
-  .input(z.object({ id: z.string() }))
-  .handler(async ({ input }) => {
-    const db = getDb();
-    const graph = db.select().from(schema.graphs).where(eq(schema.graphs.id, input.id)).get();
-    if (!graph) throw new Error(`Graph not found: ${input.id}`);
-    return graph;
-  });
+const graphGet = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  const graph = db.select().from(schema.graphs).where(eq(schema.graphs.id, input.id)).get();
+  if (!graph) throw new Error(`Graph not found: ${input.id}`);
+  return graph;
+});
 
-const graphDelete = os
-  .input(z.object({ id: z.string() }))
-  .handler(async ({ input }) => {
-    const db = getDb();
-    db.delete(schema.graphs).where(eq(schema.graphs.id, input.id)).run();
-    return { success: true };
-  });
+const graphDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  db.delete(schema.graphs).where(eq(schema.graphs.id, input.id)).run();
+  return { success: true };
+});
 
 // ── Node ───────────────────────────────────────────────────────────────────────
 
-const nodeList = os
-  .input(z.object({ graphId: z.string() }))
-  .handler(async ({ input }) => {
-    const db = getDb();
-    return db.select().from(schema.nodes).where(eq(schema.nodes.graphId, input.graphId)).all();
-  });
+const nodeList = os.input(z.object({ graphId: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  return db.select().from(schema.nodes).where(eq(schema.nodes.graphId, input.graphId)).all();
+});
 
 const nodeCreate = os
   .input(
@@ -64,7 +60,9 @@ const nodeCreate = os
   .handler(async ({ input }) => {
     const db = getDb();
     const id = crypto.randomUUID();
-    db.insert(schema.nodes).values({ id, ...input }).run();
+    db.insert(schema.nodes)
+      .values({ id, ...input })
+      .run();
     const node = db.select().from(schema.nodes).where(eq(schema.nodes.id, id)).get();
     if (!node) throw new Error("Failed to create node");
     return node;
@@ -72,12 +70,10 @@ const nodeCreate = os
 
 // ── Edge ───────────────────────────────────────────────────────────────────────
 
-const edgeList = os
-  .input(z.object({ graphId: z.string() }))
-  .handler(async ({ input }) => {
-    const db = getDb();
-    return db.select().from(schema.edges).where(eq(schema.edges.graphId, input.graphId)).all();
-  });
+const edgeList = os.input(z.object({ graphId: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  return db.select().from(schema.edges).where(eq(schema.edges.graphId, input.graphId)).all();
+});
 
 const edgeCreate = os
   .input(
@@ -91,7 +87,9 @@ const edgeCreate = os
   .handler(async ({ input }) => {
     const db = getDb();
     const id = crypto.randomUUID();
-    db.insert(schema.edges).values({ id, ...input }).run();
+    db.insert(schema.edges)
+      .values({ id, ...input })
+      .run();
     const edge = db.select().from(schema.edges).where(eq(schema.edges.id, id)).get();
     if (!edge) throw new Error("Failed to create edge");
     return edge;

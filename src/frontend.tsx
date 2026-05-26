@@ -1,11 +1,17 @@
 import "./styles.css";
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { createRoot } from "react-dom/client";
 import type { RouterClient } from "@orpc/server";
-import type { router } from "./router";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { createRoot } from "react-dom/client";
 import type { Graph } from "./db/schema";
+import type { router } from "./router";
 
 // ── oRPC client (HTTP) ────────────────────────────────────────────────────────
 
@@ -18,7 +24,11 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5_
 function GraphList() {
   const qc = useQueryClient();
 
-  const { data: graphs = [], isLoading, error } = useQuery<Graph[]>({
+  const {
+    data: graphs = [],
+    isLoading,
+    error,
+  } = useQuery<Graph[]>({
     queryKey: ["graphs"],
     queryFn: () => orpc.graph.list(),
   });

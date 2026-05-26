@@ -1,11 +1,11 @@
 import { RPCHandler } from "@orpc/server/fetch";
-import { PORT } from "./runtime-config";
-import { router } from "./router";
 import index from "./index.html";
+import { router } from "./router";
+import { PORT } from "./runtime-config";
 
 const rpcHandler = new RPCHandler(router);
 
-let sseClients = new Set<ReadableStreamDefaultController>();
+const sseClients = new Set<ReadableStreamDefaultController>();
 
 export function notifyClients(event: string, data: unknown): void {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -64,7 +64,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
       "/*": index,
     },
 
-    development: process.env["NODE_ENV"] !== "production",
+    development: process.env.NODE_ENV !== "production",
   });
 
   console.log(`[graph-tool] Server running at http://localhost:${server.port}`);
