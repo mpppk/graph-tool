@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux-x64
+            runner: ubuntu-latest
+            bun_target: bun-linux-x64
+            asset: graph-tool-linux-x64
+          - os: linux-arm64
+            runner: ubuntu-24.04-arm
+            bun_target: bun-linux-arm64
+            asset: graph-tool-linux-arm64
+          - os: macos-arm64
+            runner: macos-latest
+            bun_target: bun-darwin-arm64
+            asset: graph-tool-macos-arm64
+          - os: macos-x64
+            runner: macos-13
+            bun_target: bun-darwin-x64
+            asset: graph-tool-macos-x64
+          - os: windows-x64
+            runner: windows-latest
+            bun_target: bun-windows-x64
+            asset: graph-tool-windows-x64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build binary
+        env:
+          BUN_TARGET: ${{ matrix.bun_target }}
+        run: bun run build:binary
+
+      - name: Rename binary (Unix)
+        if: runner.os != 'Windows'
+        run: mv dist/graph-tool dist/${{ matrix.asset }}
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        run: mv dist/graph-tool.exe dist/${{ matrix.asset }}
+
+      - name: Archive (Unix)
+        if: runner.os != 'Windows'
+        run: tar czf ${{ matrix.asset }}.tar.gz -C dist ${{ matrix.asset }}
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/${{ matrix.asset }} -DestinationPath ${{ matrix.asset }}.zip
+        shell: pwsh
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.asset }}.tar.gz
+            ${{ matrix.asset }}.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: false

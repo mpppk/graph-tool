@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+
+  build:
+    name: Build & Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build:binary
+      - name: Smoke test
+        run: |
+          ./dist/graph-tool --version
+          ./dist/graph-tool --help
+          GRAPH_TOOL_DB=/tmp/smoke-test.db ./dist/graph-tool graph list
+          GRAPH_TOOL_DB=/tmp/smoke-test.db ./dist/graph-tool graph create --name "smoke-test"
+          GRAPH_TOOL_DB=/tmp/smoke-test.db ./dist/graph-tool graph list
