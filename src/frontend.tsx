@@ -4,31 +4,31 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
 import {
-  Background,
-  Controls,
-  Handle,
-  MiniMap,
-  Position,
-  ReactFlow,
-  addEdge,
-  useEdgesState,
-  useNodesState,
-  useReactFlow,
-  type Connection,
-  type Edge as RFEdge,
-  type Node as RFNode,
-  type NodeProps,
-  type OnConnect,
-} from "@xyflow/react";
-import {
   QueryClient,
   QueryClientProvider,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import {
+  Background,
+  type Connection,
+  Controls,
+  Handle,
+  MiniMap,
+  type NodeProps,
+  type OnConnect,
+  Position,
+  type Edge as RFEdge,
+  type Node as RFNode,
+  ReactFlow,
+  addEdge,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
+} from "@xyflow/react";
 import ELK from "elkjs/lib/elk.bundled.js";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Graph } from "./db/schema";
 import type { router } from "./router";
@@ -184,6 +184,11 @@ function SidePanel({
   // 編集中の行 (id → draft value)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingId) editInputRef.current?.focus();
+  }, [editingId]);
 
   const handleAddMeta = useCallback(() => {
     const k = newKey.trim();
@@ -240,9 +245,7 @@ function SidePanel({
             Metadata
           </p>
 
-          {metadata.length === 0 && (
-            <p className="text-xs text-slate-400">メタデータなし</p>
-          )}
+          {metadata.length === 0 && <p className="text-xs text-slate-400">メタデータなし</p>}
 
           <ul className="space-y-2">
             {metadata.map((m) => (
@@ -252,6 +255,7 @@ function SidePanel({
                 </span>
                 {editingId === m.id ? (
                   <input
+                    ref={editInputRef}
                     value={editDraft}
                     onChange={(e) => setEditDraft(e.target.value)}
                     onBlur={() => handleEditCommit(m.id, m.key)}
@@ -260,7 +264,6 @@ function SidePanel({
                       if (e.key === "Escape") setEditingId(null);
                     }}
                     className="flex-1 rounded border border-blue-400 px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-400"
-                    autoFocus
                   />
                 ) : (
                   <button
@@ -291,14 +294,18 @@ function SidePanel({
               onChange={(e) => setNewKey(e.target.value)}
               placeholder="key"
               className="w-24 shrink-0 rounded border border-slate-200 px-2 py-1 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddMeta(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAddMeta();
+              }}
             />
             <input
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
               placeholder="value"
               className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddMeta(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAddMeta();
+              }}
             />
             <button
               type="button"
@@ -464,9 +471,7 @@ function GraphCanvas({
           ← Back
         </button>
         <h1 className="font-semibold text-slate-800">{graph.name}</h1>
-        {graph.description && (
-          <span className="text-sm text-slate-400">{graph.description}</span>
-        )}
+        {graph.description && <span className="text-sm text-slate-400">{graph.description}</span>}
         <div className="ml-auto flex gap-2">
           <button
             type="button"
@@ -539,9 +544,7 @@ function GraphView({ graph, onBack }: { graph: Graph; onBack: () => void }) {
 
   if (nodesLoading || edgesLoading) {
     return (
-      <div className="flex h-screen items-center justify-center text-slate-400">
-        Loading graph…
-      </div>
+      <div className="flex h-screen items-center justify-center text-slate-400">Loading graph…</div>
     );
   }
 
