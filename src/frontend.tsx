@@ -91,12 +91,15 @@ function EditableNode({ id, data, selected }: NodeProps) {
   const commitEdit = useCallback(() => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== (data.label as string)) {
-      updateLabel.mutate(trimmed);
+      updateNodeData(id, { label: trimmed }); // optimistic update
+      updateLabel.mutate(trimmed, {
+        onError: () => updateNodeData(id, { label: data.label as string }), // rollback on error
+      });
     } else {
       setDraft(data.label as string);
     }
     setEditing(false);
-  }, [draft, data.label, updateLabel]);
+  }, [draft, data.label, updateLabel, updateNodeData, id]);
 
   const handleDoubleClick = useCallback(() => {
     setDraft(data.label as string);
