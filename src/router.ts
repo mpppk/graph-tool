@@ -68,6 +68,17 @@ const nodeCreate = os
     return node;
   });
 
+const nodeUpdatePosition = os
+  .input(z.object({ id: z.string(), x: z.number(), y: z.number() }))
+  .handler(async ({ input }) => {
+    const db = getDb();
+    db.update(schema.nodes)
+      .set({ x: input.x, y: input.y })
+      .where(eq(schema.nodes.id, input.id))
+      .run();
+    return { success: true };
+  });
+
 // ── Edge ───────────────────────────────────────────────────────────────────────
 
 const edgeList = os.input(z.object({ graphId: z.string() })).handler(async ({ input }) => {
@@ -107,6 +118,7 @@ export const router = {
   node: {
     list: nodeList,
     create: nodeCreate,
+    updatePosition: nodeUpdatePosition,
   },
   edge: {
     list: edgeList,
