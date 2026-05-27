@@ -3,8 +3,12 @@ import type { Database } from "bun:sqlite";
 // SQL files are embedded at compile time via Bun's import assertions —
 // works in both dev and compiled binary.
 import migration0001 from "./migrations/0001_init.sql" with { type: "text" };
+import migration0002 from "./migrations/0002_add_node_metadata.sql" with { type: "text" };
 
-const MIGRATIONS: Array<[string, string]> = [["0001_init.sql", migration0001]];
+const MIGRATIONS: Array<[string, string]> = [
+  ["0001_init.sql", migration0001],
+  ["0002_add_node_metadata.sql", migration0002],
+];
 
 export function runMigrations(db: Database): void {
   db.run(`

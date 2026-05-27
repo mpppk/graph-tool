@@ -1,5 +1,5 @@
 import { os } from "@orpc/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "./db";
 
@@ -79,6 +79,62 @@ const nodeUpdatePosition = os
     return { success: true };
   });
 
+const nodeUpdateLabel = os
+  .input(z.object({ id: z.string(), label: z.string().min(1) }))
+  .handler(async ({ input }) => {
+    const db = getDb();
+    db.update(schema.nodes)
+      .set({ label: input.label })
+      .where(eq(schema.nodes.id, input.id))
+      .run();
+    const node = db.select().from(schema.nodes).where(eq(schema.nodes.id, input.id)).get();
+    if (!node) throw new Error(`Node not found: ${input.id}`);
+    return node;
+  });
+
+const nodeDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  db.delete(schema.nodes).where(eq(schema.nodes.id, input.id)).run();
+  return { success: true };
+});
+
+// ── Node Metadata ──────────────────────────────────────────────────────────────
+
+const metadataList = os.input(z.object({ nodeId: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  return db
+    .select()
+    .from(schema.nodeMetadata)
+    .where(eq(schema.nodeMetadata.nodeId, input.nodeId))
+    .all();
+});
+
+const metadataUpsert = os
+  .input(z.object({ nodeId: z.string(), key: z.string().min(1), value: z.string() }))
+  .handler(async ({ input }) => {
+    const db = getDb();
+    const id = crypto.randomUUID();
+    db.run(
+      sql`INSERT INTO node_metadata (id, node_id, key, value)
+          VALUES (${id}, ${input.nodeId}, ${input.key}, ${input.value})
+          ON CONFLICT(node_id, key) DO UPDATE SET value = excluded.value`,
+    );
+    const row = db
+      .select()
+      .from(schema.nodeMetadata)
+      .where(eq(schema.nodeMetadata.nodeId, input.nodeId))
+      .all()
+      .find((m) => m.key === input.key);
+    if (!row) throw new Error("Failed to upsert metadata");
+    return row;
+  });
+
+const metadataDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  db.delete(schema.nodeMetadata).where(eq(schema.nodeMetadata.id, input.id)).run();
+  return { success: true };
+});
+
 // ── Edge ───────────────────────────────────────────────────────────────────────
 
 const edgeList = os.input(z.object({ graphId: z.string() })).handler(async ({ input }) => {
@@ -106,6 +162,12 @@ const edgeCreate = os
     return edge;
   });
 
+const edgeDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+  const db = getDb();
+  db.delete(schema.edges).where(eq(schema.edges.id, input.id)).run();
+  return { success: true };
+});
+
 // ── Router ─────────────────────────────────────────────────────────────────────
 
 export const router = {
@@ -119,10 +181,18 @@ export const router = {
     list: nodeList,
     create: nodeCreate,
     updatePosition: nodeUpdatePosition,
+    updateLabel: nodeUpdateLabel,
+    delete: nodeDelete,
+    metadata: {
+      list: metadataList,
+      upsert: metadataUpsert,
+      delete: metadataDelete,
+    },
   },
   edge: {
     list: edgeList,
     create: edgeCreate,
+    delete: edgeDelete,
   },
 };
 

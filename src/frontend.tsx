@@ -6,14 +6,18 @@ import type { RouterClient } from "@orpc/server";
 import {
   Background,
   Controls,
+  Handle,
   MiniMap,
+  Position,
   ReactFlow,
   addEdge,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Connection,
   type Edge as RFEdge,
   type Node as RFNode,
+  type NodeProps,
   type OnConnect,
 } from "@xyflow/react";
 import {
@@ -24,14 +28,13 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import ELK from "elkjs/lib/elk.bundled.js";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Graph } from "./db/schema";
 import type { router } from "./router";
 
 // ── oRPC client ───────────────────────────────────────────────────────────────
 
-// RPCLink requires an absolute URL; resolve /orpc against the current page origin.
 const orpc = createORPCClient<RouterClient<typeof router>>(
   new RPCLink({ url: new URL("/orpc", window.location.href).href }),
 );
@@ -70,12 +73,264 @@ async function computeElkLayout(
   return positions;
 }
 
-// ── GraphCanvas — React Flow canvas (mounts only after data is loaded) ────────
-//
-// Pattern: outer GraphView fetches data and shows loading;
-// inner GraphCanvas receives fully-loaded initialNodes/initialEdges so
-// useNodesState/useEdgesState are never initialized with empty arrays that
-// change reference on every render (which would cause an infinite update loop).
+// ── EditableNode — カスタムノード（ダブルクリックでインライン編集） ────────────
+
+function EditableNode({ id, data, selected }: NodeProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(data.label as string);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { updateNodeData } = useReactFlow();
+
+  const updateLabel = useMutation({
+    mutationFn: (label: string) => orpc.node.updateLabel({ id, label }),
+    onSuccess: (node) => {
+      updateNodeData(id, { label: node.label });
+    },
+  });
+
+  const commitEdit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== (data.label as string)) {
+      updateLabel.mutate(trimmed);
+    } else {
+      setDraft(data.label as string);
+    }
+    setEditing(false);
+  }, [draft, data.label, updateLabel]);
+
+  const handleDoubleClick = useCallback(() => {
+    setDraft(data.label as string);
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  }, [data.label]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") commitEdit();
+      if (e.key === "Escape") {
+        setDraft(data.label as string);
+        setEditing(false);
+      }
+    },
+    [commitEdit, data.label],
+  );
+
+  return (
+    <div
+      className={`flex min-w-[120px] max-w-[200px] items-center justify-center rounded-md border-2 bg-white px-3 py-2 text-sm font-medium shadow-sm ${
+        selected ? "border-blue-500" : "border-slate-300"
+      }`}
+      onDoubleClick={handleDoubleClick}
+    >
+      <Handle type="target" position={Position.Top} />
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={handleKeyDown}
+          className="w-full bg-transparent text-center text-sm outline-none"
+          // stopPropagation prevents ReactFlow from intercepting keystrokes
+          onKeyUp={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span className="text-center">{data.label as string}</span>
+      )}
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+const nodeTypes = { default: EditableNode };
+
+// ── SidePanel — 選択ノードの詳細・編集パネル ─────────────────────────────────
+
+function SidePanel({
+  nodeId,
+  nodes,
+  onClose,
+  onDeleteNode,
+}: {
+  nodeId: string;
+  nodes: RFNode[];
+  onClose: () => void;
+  onDeleteNode: (id: string) => void;
+}) {
+  const qc = useQueryClient();
+  const node = nodes.find((n) => n.id === nodeId);
+  const label = node ? (node.data.label as string) : "";
+
+  const { data: metadata = [] } = useQuery({
+    queryKey: ["metadata", nodeId],
+    queryFn: () => orpc.node.metadata.list({ nodeId }),
+    enabled: !!nodeId,
+  });
+
+  const upsertMeta = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      orpc.node.metadata.upsert({ nodeId, key, value }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["metadata", nodeId] }),
+  });
+
+  const deleteMeta = useMutation({
+    mutationFn: (id: string) => orpc.node.metadata.delete({ id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["metadata", nodeId] }),
+  });
+
+  // 新規行の入力state
+  const [newKey, setNewKey] = useState("");
+  const [newValue, setNewValue] = useState("");
+  // 編集中の行 (id → draft value)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+
+  const handleAddMeta = useCallback(() => {
+    const k = newKey.trim();
+    const v = newValue.trim();
+    if (!k) return;
+    upsertMeta.mutate({ key: k, value: v });
+    setNewKey("");
+    setNewValue("");
+  }, [newKey, newValue, upsertMeta]);
+
+  const handleEditStart = useCallback((id: string, value: string) => {
+    setEditingId(id);
+    setEditDraft(value);
+  }, []);
+
+  const handleEditCommit = useCallback(
+    (id: string, key: string) => {
+      upsertMeta.mutate({ key, value: editDraft });
+      setEditingId(null);
+    },
+    [editDraft, upsertMeta],
+  );
+
+  if (!node) return null;
+
+  return (
+    <aside className="flex w-72 flex-shrink-0 flex-col border-l border-slate-200 bg-white">
+      {/* ヘッダー */}
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <span className="text-sm font-semibold text-slate-700">Node</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          aria-label="Close panel"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {/* ラベル（読み取り専用表示。編集はキャンバス上でダブルクリック） */}
+        <section>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Label</p>
+          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+            {label}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">ダブルクリックでキャンバス上から編集</p>
+        </section>
+
+        {/* メタデータ */}
+        <section>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+            Metadata
+          </p>
+
+          {metadata.length === 0 && (
+            <p className="text-xs text-slate-400">メタデータなし</p>
+          )}
+
+          <ul className="space-y-2">
+            {metadata.map((m) => (
+              <li key={m.id} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 truncate rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                  {m.key}
+                </span>
+                {editingId === m.id ? (
+                  <input
+                    value={editDraft}
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    onBlur={() => handleEditCommit(m.id, m.key)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleEditCommit(m.id, m.key);
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    className="flex-1 rounded border border-blue-400 px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-400"
+                    autoFocus
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="flex-1 truncate rounded px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                    onClick={() => handleEditStart(m.id, m.value)}
+                    title="クリックして編集"
+                  >
+                    {m.value || <span className="italic text-slate-400">（空）</span>}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => deleteMeta.mutate(m.id)}
+                  className="shrink-0 rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-400"
+                  aria-label="Delete metadata"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {/* 新規メタデータ追加行 */}
+          <div className="mt-3 flex gap-2">
+            <input
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+              placeholder="key"
+              className="w-24 shrink-0 rounded border border-slate-200 px-2 py-1 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAddMeta(); }}
+            />
+            <input
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder="value"
+              className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAddMeta(); }}
+            />
+            <button
+              type="button"
+              onClick={handleAddMeta}
+              disabled={!newKey.trim()}
+              className="shrink-0 rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-40"
+            >
+              追加
+            </button>
+          </div>
+        </section>
+      </div>
+
+      {/* フッター：削除ボタン */}
+      <div className="border-t border-slate-200 p-4">
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm("このノードを削除しますか？")) {
+              onDeleteNode(nodeId);
+            }
+          }}
+          className="w-full rounded-lg border border-red-200 py-2 text-sm font-medium text-red-500 hover:bg-red-50"
+        >
+          Delete Node
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// ── GraphCanvas ────────────────────────────────────────────────────────────────
 
 function GraphCanvas({
   graph,
@@ -90,6 +345,7 @@ function GraphCanvas({
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const updatePosition = useMutation({
     mutationFn: ({ id, x, y }: { id: string; x: number; y: number }) =>
@@ -107,7 +363,12 @@ function GraphCanvas({
     onSuccess: (newNode) => {
       setNodes((prev) => [
         ...prev,
-        { id: newNode.id, position: { x: newNode.x, y: newNode.y }, data: { label: newNode.label } },
+        {
+          id: newNode.id,
+          type: "default",
+          position: { x: newNode.x, y: newNode.y },
+          data: { label: newNode.label },
+        },
       ]);
     },
   });
@@ -115,6 +376,14 @@ function GraphCanvas({
   const createEdge = useMutation({
     mutationFn: ({ sourceNodeId, targetNodeId }: { sourceNodeId: string; targetNodeId: string }) =>
       orpc.edge.create({ graphId: graph.id, sourceNodeId, targetNodeId }),
+  });
+
+  const deleteNode = useMutation({
+    mutationFn: (id: string) => orpc.node.delete({ id }),
+  });
+
+  const deleteEdge = useMutation({
+    mutationFn: (id: string) => orpc.edge.delete({ id }),
   });
 
   const onConnect: OnConnect = useCallback(
@@ -132,6 +401,43 @@ function GraphCanvas({
       updatePosition.mutate({ id: node.id, x: node.position.x, y: node.position.y });
     },
     [updatePosition],
+  );
+
+  const onNodeClick = useCallback((_: React.MouseEvent, node: RFNode) => {
+    setSelectedNodeId(node.id);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+  }, []);
+
+  const onNodesDelete = useCallback(
+    (deletedNodes: RFNode[]) => {
+      for (const n of deletedNodes) {
+        deleteNode.mutate(n.id);
+        if (selectedNodeId === n.id) setSelectedNodeId(null);
+      }
+    },
+    [deleteNode, selectedNodeId],
+  );
+
+  const onEdgesDelete = useCallback(
+    (deletedEdges: RFEdge[]) => {
+      for (const e of deletedEdges) {
+        deleteEdge.mutate(e.id);
+      }
+    },
+    [deleteEdge],
+  );
+
+  const handleDeleteNodeFromPanel = useCallback(
+    (nodeId: string) => {
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      deleteNode.mutate(nodeId);
+      setSelectedNodeId(null);
+    },
+    [setNodes, setEdges, deleteNode],
   );
 
   const handleAutoLayout = useCallback(async () => {
@@ -183,26 +489,43 @@ function GraphCanvas({
         </div>
       </header>
 
-      <div className="flex-1">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeDragStop={onNodeDragStop}
-          fitView
-        >
-          <Background />
-          <Controls />
-          <MiniMap />
-        </ReactFlow>
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeDragStop={onNodeDragStop}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            onNodesDelete={onNodesDelete}
+            onEdgesDelete={onEdgesDelete}
+            deleteKeyCode="Delete"
+            fitView
+          >
+            <Background />
+            <Controls />
+            <MiniMap />
+          </ReactFlow>
+        </div>
+
+        {selectedNodeId && (
+          <SidePanel
+            nodeId={selectedNodeId}
+            nodes={nodes}
+            onClose={() => setSelectedNodeId(null)}
+            onDeleteNode={handleDeleteNodeFromPanel}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-// ── GraphView — fetches data, shows loading, then mounts GraphCanvas ──────────
+// ── GraphView ─────────────────────────────────────────────────────────────────
 
 function GraphView({ graph, onBack }: { graph: Graph; onBack: () => void }) {
   const { data: dbNodes, isLoading: nodesLoading } = useQuery({
@@ -224,6 +547,7 @@ function GraphView({ graph, onBack }: { graph: Graph; onBack: () => void }) {
 
   const initialNodes: RFNode[] = (dbNodes ?? []).map((n) => ({
     id: n.id,
+    type: "default",
     position: { x: n.x, y: n.y },
     data: { label: n.label },
   }));
