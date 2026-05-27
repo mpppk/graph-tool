@@ -12,17 +12,20 @@ import {
 } from "@tanstack/react-query";
 import {
   Background,
+  BaseEdge,
   type Connection,
   Controls,
+  EdgeLabelRenderer,
   Handle,
   MiniMap,
+  type EdgeProps,
   type NodeProps,
   type OnConnect,
   Position,
   type Edge as RFEdge,
   type Node as RFNode,
   ReactFlow,
-  addEdge,
+  getBezierPath,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -146,6 +149,112 @@ function EditableNode({ id, data, selected }: NodeProps) {
 }
 
 const nodeTypes = { default: EditableNode };
+
+// ── EditableEdge — カスタムエッジ（ダブルクリックでラベル編集） ───────────────
+
+function EditableEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+}: EdgeProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState((data?.label as string) ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { updateEdgeData } = useReactFlow();
+
+  const updateLabel = useMutation({
+    mutationFn: (label: string) => orpc.edge.updateLabel({ id, label }),
+    onSuccess: (edge) => {
+      updateEdgeData(id, { label: edge.label });
+    },
+  });
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  const commitEdit = useCallback(() => {
+    const trimmed = draft.trim();
+    const current = (data?.label as string) ?? "";
+    if (trimmed !== current) {
+      updateEdgeData(id, { label: trimmed });
+      updateLabel.mutate(trimmed, {
+        onError: () => updateEdgeData(id, { label: current }),
+      });
+    }
+    setEditing(false);
+  }, [draft, data?.label, updateLabel, updateEdgeData, id]);
+
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setDraft((data?.label as string) ?? "");
+      setEditing(true);
+      setTimeout(() => inputRef.current?.select(), 0);
+    },
+    [data?.label],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") commitEdit();
+      if (e.key === "Escape") {
+        setDraft((data?.label as string) ?? "");
+        setEditing(false);
+      }
+    },
+    [commitEdit, data?.label],
+  );
+
+  const label = (data?.label as string) ?? "";
+
+  return (
+    <>
+      <BaseEdge path={edgePath} />
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: "absolute",
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            pointerEvents: "all",
+          }}
+          className="nodrag nopan"
+        >
+          {editing ? (
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={handleKeyDown}
+              onKeyUp={(e) => e.stopPropagation()}
+              className="rounded border border-blue-400 bg-white px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-400 shadow-sm"
+            />
+          ) : label ? (
+            <span
+              onDoubleClick={handleDoubleClick}
+              className="cursor-pointer rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 shadow-sm hover:border-blue-300"
+            >
+              {label}
+            </span>
+          ) : null}
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+const edgeTypes = { editable: EditableEdge };
 
 // ── SidePanel — 選択ノードの詳細・編集パネル ─────────────────────────────────
 
@@ -340,6 +449,87 @@ function SidePanel({
   );
 }
 
+// ── EdgeSidePanel — 選択エッジの詳細・編集パネル ─────────────────────────────
+
+function EdgeSidePanel({
+  edgeId,
+  edges,
+  onClose,
+  onDeleteEdge,
+  onUpdateLabel,
+}: {
+  edgeId: string;
+  edges: RFEdge[];
+  onClose: () => void;
+  onDeleteEdge: (id: string) => void;
+  onUpdateLabel: (edgeId: string, label: string) => void;
+}) {
+  const edge = edges.find((e) => e.id === edgeId);
+  const currentLabel = (edge?.data?.label as string) ?? "";
+  const [draft, setDraft] = useState(currentLabel);
+
+  useEffect(() => {
+    setDraft(currentLabel);
+  }, [currentLabel]);
+
+  if (!edge) return null;
+
+  const handleCommit = () => {
+    if (draft !== currentLabel) {
+      onUpdateLabel(edgeId, draft);
+    }
+  };
+
+  return (
+    <aside className="flex w-72 flex-shrink-0 flex-col border-l border-slate-200 bg-white">
+      {/* ヘッダー */}
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <span className="text-sm font-semibold text-slate-700">Edge</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          aria-label="Close panel"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        <section>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Label</p>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleCommit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCommit();
+            }}
+            placeholder="エッジラベルを入力..."
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+          />
+          <p className="mt-1 text-xs text-slate-400">ラベルをダブルクリックでキャンバス上から編集</p>
+        </section>
+      </div>
+
+      {/* フッター：削除ボタン */}
+      <div className="border-t border-slate-200 p-4">
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm("このエッジを削除しますか？")) {
+              onDeleteEdge(edgeId);
+            }
+          }}
+          className="w-full rounded-lg border border-red-200 py-2 text-sm font-medium text-red-500 hover:bg-red-50"
+        >
+          Delete Edge
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 // ── GraphCanvas ────────────────────────────────────────────────────────────────
 
 function GraphCanvas({
@@ -356,6 +546,7 @@ function GraphCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const updatePosition = useMutation({
     mutationFn: ({ id, x, y }: { id: string; x: number; y: number }) =>
@@ -386,6 +577,30 @@ function GraphCanvas({
   const createEdge = useMutation({
     mutationFn: ({ sourceNodeId, targetNodeId }: { sourceNodeId: string; targetNodeId: string }) =>
       orpc.edge.create({ graphId: graph.id, sourceNodeId, targetNodeId }),
+    onSuccess: (newEdge) => {
+      setEdges((eds) => [
+        ...eds,
+        {
+          id: newEdge.id,
+          source: newEdge.sourceNodeId,
+          target: newEdge.targetNodeId,
+          type: "editable",
+          data: { label: newEdge.label ?? "" },
+        },
+      ]);
+    },
+  });
+
+  const updateEdgeLabel = useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) =>
+      orpc.edge.updateLabel({ id, label }),
+    onSuccess: (updatedEdge) => {
+      setEdges((eds) =>
+        eds.map((e) =>
+          e.id === updatedEdge.id ? { ...e, data: { ...e.data, label: updatedEdge.label } } : e,
+        ),
+      );
+    },
   });
 
   const deleteNode = useMutation({
@@ -398,12 +613,11 @@ function GraphCanvas({
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      setEdges((eds) => addEdge(connection, eds));
       if (connection.source && connection.target) {
         createEdge.mutate({ sourceNodeId: connection.source, targetNodeId: connection.target });
       }
     },
-    [setEdges, createEdge],
+    [createEdge],
   );
 
   const onNodeDragStop = useCallback(
@@ -415,10 +629,17 @@ function GraphCanvas({
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: RFNode) => {
     setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: RFEdge) => {
+    setSelectedEdgeId(edge.id);
+    setSelectedNodeId(null);
   }, []);
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
+    setSelectedEdgeId(null);
   }, []);
 
   const onNodesDelete = useCallback(
@@ -435,9 +656,10 @@ function GraphCanvas({
     (deletedEdges: RFEdge[]) => {
       for (const e of deletedEdges) {
         deleteEdge.mutate(e.id);
+        if (selectedEdgeId === e.id) setSelectedEdgeId(null);
       }
     },
-    [deleteEdge],
+    [deleteEdge, selectedEdgeId],
   );
 
   const handleDeleteNodeFromPanel = useCallback(
@@ -448,6 +670,22 @@ function GraphCanvas({
       setSelectedNodeId(null);
     },
     [setNodes, setEdges, deleteNode],
+  );
+
+  const handleDeleteEdgeFromPanel = useCallback(
+    (edgeId: string) => {
+      setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+      deleteEdge.mutate(edgeId);
+      setSelectedEdgeId(null);
+    },
+    [setEdges, deleteEdge],
+  );
+
+  const handleUpdateEdgeLabel = useCallback(
+    (edgeId: string, label: string) => {
+      updateEdgeLabel.mutate({ id: edgeId, label });
+    },
+    [updateEdgeLabel],
   );
 
   const handleAutoLayout = useCallback(async () => {
@@ -503,11 +741,13 @@ function GraphCanvas({
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeDragStop={onNodeDragStop}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             onNodesDelete={onNodesDelete}
             onEdgesDelete={onEdgesDelete}
@@ -526,6 +766,15 @@ function GraphCanvas({
             nodes={nodes}
             onClose={() => setSelectedNodeId(null)}
             onDeleteNode={handleDeleteNodeFromPanel}
+          />
+        )}
+        {selectedEdgeId && (
+          <EdgeSidePanel
+            edgeId={selectedEdgeId}
+            edges={edges}
+            onClose={() => setSelectedEdgeId(null)}
+            onDeleteEdge={handleDeleteEdgeFromPanel}
+            onUpdateLabel={handleUpdateEdgeLabel}
           />
         )}
       </div>
@@ -561,7 +810,8 @@ function GraphView({ graph, onBack }: { graph: Graph; onBack: () => void }) {
     id: e.id,
     source: e.sourceNodeId,
     target: e.targetNodeId,
-    label: e.label || undefined,
+    type: "editable",
+    data: { label: e.label ?? "" },
   }));
 
   return (

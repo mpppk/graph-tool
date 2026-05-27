@@ -159,6 +159,16 @@ const edgeCreate = os
     return edge;
   });
 
+const edgeUpdateLabel = os
+  .input(z.object({ id: z.string(), label: z.string() }))
+  .handler(async ({ input }) => {
+    const db = getDb();
+    db.update(schema.edges).set({ label: input.label }).where(eq(schema.edges.id, input.id)).run();
+    const edge = db.select().from(schema.edges).where(eq(schema.edges.id, input.id)).get();
+    if (!edge) throw new Error(`Edge not found: ${input.id}`);
+    return edge;
+  });
+
 const edgeDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
   const db = getDb();
   db.delete(schema.edges).where(eq(schema.edges.id, input.id)).run();
@@ -189,6 +199,7 @@ export const router = {
   edge: {
     list: edgeList,
     create: edgeCreate,
+    updateLabel: edgeUpdateLabel,
     delete: edgeDelete,
   },
 };
