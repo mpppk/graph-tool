@@ -83,10 +83,7 @@ const nodeUpdateLabel = os
   .input(z.object({ id: z.string(), label: z.string().min(1) }))
   .handler(async ({ input }) => {
     const db = getDb();
-    db.update(schema.nodes)
-      .set({ label: input.label })
-      .where(eq(schema.nodes.id, input.id))
-      .run();
+    db.update(schema.nodes).set({ label: input.label }).where(eq(schema.nodes.id, input.id)).run();
     const node = db.select().from(schema.nodes).where(eq(schema.nodes.id, input.id)).get();
     if (!node) throw new Error(`Node not found: ${input.id}`);
     return node;
