@@ -34,9 +34,21 @@ export const edges = sqliteTable("edges", {
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 
+export const nodeMetadata = sqliteTable("node_metadata", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id")
+    .notNull()
+    .references(() => nodes.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),
+  value: text("value").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});
+
 export type Graph = typeof graphs.$inferSelect;
 export type NewGraph = typeof graphs.$inferInsert;
 export type Node = typeof nodes.$inferSelect;
 export type NewNode = typeof nodes.$inferInsert;
 export type Edge = typeof edges.$inferSelect;
 export type NewEdge = typeof edges.$inferInsert;
+export type NodeMetadata = typeof nodeMetadata.$inferSelect;
+export type NewNodeMetadata = typeof nodeMetadata.$inferInsert;
