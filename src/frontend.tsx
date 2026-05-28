@@ -125,8 +125,7 @@ function EditableNode({ id, data, selected }: NodeProps) {
       updateNodeData(id, { ...data, autoEdit: false });
       setTimeout(() => inputRef.current?.select(), 0);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.autoEdit]);
+  }, [data, id, updateNodeData]);
 
   const handleDoubleClick = useCallback(() => {
     setDraft(data.label as string);
