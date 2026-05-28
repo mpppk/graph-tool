@@ -43,6 +43,17 @@ const orpc = createORPCClient<RouterClient<typeof router>>(
 );
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5_000 } } });
 
+// ── Node types & colors ───────────────────────────────────────────────────────
+
+const NODE_TYPE_COLORS: Record<string, string> = {
+  KPI: "#3b82f6",
+  Epic: "#8b5cf6",
+  Feature: "#22c55e",
+  Opportunity: "#f97316",
+  Solution: "#14b8a6",
+};
+const PREDEFINED_NODE_TYPES = Object.keys(NODE_TYPE_COLORS);
+
 // ── ELK layout ────────────────────────────────────────────────────────────────
 
 const elk = new ELK();
@@ -83,6 +94,9 @@ function EditableNode({ id, data, selected }: NodeProps) {
   const [draft, setDraft] = useState(data.label as string);
   const inputRef = useRef<HTMLInputElement>(null);
   const { updateNodeData } = useReactFlow();
+  const nodeType = data.nodeType as string | null | undefined;
+  const bgColor = nodeType ? (NODE_TYPE_COLORS[nodeType] ?? "#ffffff") : "#ffffff";
+  const hasTypeColor = !!nodeType && !!NODE_TYPE_COLORS[nodeType];
 
   const updateLabel = useMutation({
     mutationFn: (label: string) => orpc.node.updateLabel({ id, label }),
@@ -123,7 +137,8 @@ function EditableNode({ id, data, selected }: NodeProps) {
 
   return (
     <div
-      className={`flex min-w-[120px] max-w-[200px] items-center justify-center rounded-md border-2 bg-white px-3 py-2 text-sm font-medium shadow-sm ${
+      style={{ backgroundColor: bgColor, color: hasTypeColor ? "#ffffff" : undefined }}
+      className={`flex min-w-[120px] max-w-[200px] items-center justify-center rounded-md border-2 px-3 py-2 text-sm font-medium shadow-sm ${
         selected ? "border-blue-500" : "border-slate-300"
       }`}
       onDoubleClick={handleDoubleClick}
@@ -136,7 +151,7 @@ function EditableNode({ id, data, selected }: NodeProps) {
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitEdit}
           onKeyDown={handleKeyDown}
-          className="w-full bg-transparent text-center text-sm outline-none"
+          className={`w-full bg-transparent text-center text-sm outline-none ${hasTypeColor ? "placeholder-white/60" : ""}`}
           // stopPropagation prevents ReactFlow from intercepting keystrokes
           onKeyUp={(e) => e.stopPropagation()}
         />
@@ -263,15 +278,18 @@ function SidePanel({
   nodes,
   onClose,
   onDeleteNode,
+  onUpdateNodeType,
 }: {
   nodeId: string;
   nodes: RFNode[];
   onClose: () => void;
   onDeleteNode: (id: string) => void;
+  onUpdateNodeType: (nodeId: string, nodeType: string | null) => void;
 }) {
   const qc = useQueryClient();
   const node = nodes.find((n) => n.id === nodeId);
   const label = node ? (node.data.label as string) : "";
+  const currentNodeType = node ? (node.data.nodeType as string | null | undefined) ?? "" : "";
 
   const { data: metadata = [] } = useQuery({
     queryKey: ["metadata", nodeId],
@@ -349,6 +367,26 @@ function SidePanel({
             {label}
           </p>
           <p className="mt-1 text-xs text-slate-400">ダブルクリックでキャンバス上から編集</p>
+        </section>
+
+        {/* タイプ */}
+        <section>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">タイプ</p>
+          <select
+            value={currentNodeType}
+            onChange={(e) => {
+              const val = e.target.value;
+              onUpdateNodeType(nodeId, val || null);
+            }}
+            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="">なし</option>
+            {PREDEFINED_NODE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
         </section>
 
         {/* メタデータ */}
@@ -568,7 +606,7 @@ function GraphCanvas({
           id: newNode.id,
           type: "default",
           position: { x: newNode.x, y: newNode.y },
-          data: { label: newNode.label },
+          data: { label: newNode.label, nodeType: newNode.nodeType ?? null },
         },
       ]);
     },
@@ -610,6 +648,21 @@ function GraphCanvas({
   const deleteEdge = useMutation({
     mutationFn: (id: string) => orpc.edge.delete({ id }),
   });
+
+  const updateNodeType = useMutation({
+    mutationFn: ({ id, nodeType }: { id: string; nodeType: string | null }) =>
+      orpc.node.updateType({ id, nodeType }),
+  });
+
+  const handleUpdateNodeType = useCallback(
+    (nodeId: string, nodeType: string | null) => {
+      setNodes((nds) =>
+        nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, nodeType } } : n)),
+      );
+      updateNodeType.mutate({ id: nodeId, nodeType });
+    },
+    [setNodes, updateNodeType],
+  );
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
@@ -766,6 +819,7 @@ function GraphCanvas({
             nodes={nodes}
             onClose={() => setSelectedNodeId(null)}
             onDeleteNode={handleDeleteNodeFromPanel}
+            onUpdateNodeType={handleUpdateNodeType}
           />
         )}
         {selectedEdgeId && (
@@ -804,7 +858,7 @@ function GraphView({ graph, onBack }: { graph: Graph; onBack: () => void }) {
     id: n.id,
     type: "default",
     position: { x: n.x, y: n.y },
-    data: { label: n.label },
+    data: { label: n.label, nodeType: n.nodeType ?? null },
   }));
   const initialEdges: RFEdge[] = (dbEdges ?? []).map((e) => ({
     id: e.id,

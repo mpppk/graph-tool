@@ -16,6 +16,7 @@ export const nodes = sqliteTable("nodes", {
   label: text("label").notNull(),
   x: real("x").notNull().default(0),
   y: real("y").notNull().default(0),
+  nodeType: text("node_type"),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 

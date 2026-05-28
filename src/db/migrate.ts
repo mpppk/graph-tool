@@ -4,10 +4,12 @@ import type { Database } from "bun:sqlite";
 // works in both dev and compiled binary.
 import migration0001 from "./migrations/0001_init.sql" with { type: "text" };
 import migration0002 from "./migrations/0002_add_node_metadata.sql" with { type: "text" };
+import migration0003 from "./migrations/0003_add_node_type.sql" with { type: "text" };
 
 const MIGRATIONS: Array<[string, string]> = [
   ["0001_init.sql", migration0001],
   ["0002_add_node_metadata.sql", migration0002],
+  ["0003_add_node_type.sql", migration0003],
 ];
 
 export function runMigrations(db: Database): void {
