@@ -118,6 +118,16 @@ function EditableNode({ id, data, selected }: NodeProps) {
     setEditing(false);
   }, [draft, data.label, updateLabel, updateNodeData, id]);
 
+  useEffect(() => {
+    if (data.autoEdit) {
+      setDraft(data.label as string);
+      setEditing(true);
+      updateNodeData(id, { ...data, autoEdit: false });
+      setTimeout(() => inputRef.current?.select(), 0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.autoEdit]);
+
   const handleDoubleClick = useCallback(() => {
     setDraft(data.label as string);
     setEditing(true);
@@ -474,9 +484,7 @@ function SidePanel({
         <button
           type="button"
           onClick={() => {
-            if (confirm("このノードを削除しますか？")) {
-              onDeleteNode(nodeId);
-            }
+            onDeleteNode(nodeId);
           }}
           className="w-full rounded-lg border border-red-200 py-2 text-sm font-medium text-red-500 hover:bg-red-50"
         >
@@ -555,9 +563,7 @@ function EdgeSidePanel({
         <button
           type="button"
           onClick={() => {
-            if (confirm("このエッジを削除しますか？")) {
-              onDeleteEdge(edgeId);
-            }
+            onDeleteEdge(edgeId);
           }}
           className="w-full rounded-lg border border-red-200 py-2 text-sm font-medium text-red-500 hover:bg-red-50"
         >
@@ -606,7 +612,7 @@ function GraphCanvas({
           id: newNode.id,
           type: "default",
           position: { x: newNode.x, y: newNode.y },
-          data: { label: newNode.label, nodeType: newNode.nodeType ?? null },
+          data: { label: newNode.label, nodeType: newNode.nodeType ?? null, autoEdit: true },
         },
       ]);
     },
@@ -778,8 +784,7 @@ function GraphCanvas({
             type="button"
             disabled={createNode.isPending}
             onClick={() => {
-              const label = prompt("Node label:");
-              if (label?.trim()) createNode.mutate(label.trim());
+              createNode.mutate("New Node");
             }}
             className="rounded-lg bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
           >
@@ -883,6 +888,9 @@ function GraphView({ graph, onBack }: { graph: Graph; onBack: () => void }) {
 
 function GraphList({ onSelect }: { onSelect: (graph: Graph) => void }) {
   const qc = useQueryClient();
+  const [editingGraphId, setEditingGraphId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const {
     data: graphs = [],
@@ -895,6 +903,17 @@ function GraphList({ onSelect }: { onSelect: (graph: Graph) => void }) {
 
   const createGraph = useMutation({
     mutationFn: (name: string) => orpc.graph.create({ name }),
+    onSuccess: (newGraph) => {
+      qc.invalidateQueries({ queryKey: ["graphs"] });
+      setEditingDraft(newGraph.name);
+      setEditingGraphId(newGraph.id);
+      setTimeout(() => nameInputRef.current?.select(), 0);
+    },
+  });
+
+  const updateGraphName = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      orpc.graph.updateName({ id, name }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["graphs"] }),
   });
 
@@ -902,6 +921,16 @@ function GraphList({ onSelect }: { onSelect: (graph: Graph) => void }) {
     mutationFn: (id: string) => orpc.graph.delete({ id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["graphs"] }),
   });
+
+  const commitGraphName = useCallback(() => {
+    if (!editingGraphId) return;
+    const trimmed = editingDraft.trim();
+    const current = graphs.find((g) => g.id === editingGraphId)?.name ?? "";
+    if (trimmed && trimmed !== current) {
+      updateGraphName.mutate({ id: editingGraphId, name: trimmed });
+    }
+    setEditingGraphId(null);
+  }, [editingGraphId, editingDraft, graphs, updateGraphName]);
 
   if (isLoading) {
     return <div className="flex items-center justify-center p-8 text-slate-400">Loading…</div>;
@@ -923,8 +952,7 @@ function GraphList({ onSelect }: { onSelect: (graph: Graph) => void }) {
           type="button"
           disabled={createGraph.isPending}
           onClick={() => {
-            const name = prompt("Graph name:");
-            if (name?.trim()) createGraph.mutate(name.trim());
+            createGraph.mutate("New Graph");
           }}
           className="rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
@@ -941,17 +969,43 @@ function GraphList({ onSelect }: { onSelect: (graph: Graph) => void }) {
               key={g.id}
               className="flex items-start justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
             >
-              <button type="button" onClick={() => onSelect(g)} className="text-left">
-                <div className="font-medium text-blue-600 hover:underline">{g.name}</div>
+              <div className="flex-1 text-left min-w-0">
+                {editingGraphId === g.id ? (
+                  <input
+                    ref={nameInputRef}
+                    value={editingDraft}
+                    onChange={(e) => setEditingDraft(e.target.value)}
+                    onBlur={commitGraphName}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitGraphName();
+                      if (e.key === "Escape") setEditingGraphId(null);
+                    }}
+                    className="w-full rounded border border-blue-400 px-1 py-0 text-base font-medium text-blue-600 outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(g)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setEditingDraft(g.name);
+                      setEditingGraphId(g.id);
+                      setTimeout(() => nameInputRef.current?.select(), 0);
+                    }}
+                    className="text-left"
+                  >
+                    <div className="font-medium text-blue-600 hover:underline">{g.name}</div>
+                  </button>
+                )}
                 {g.description && (
                   <div className="mt-1 text-sm text-slate-500">{g.description}</div>
                 )}
                 <div className="mt-2 font-mono text-xs text-slate-400">{g.createdAt}</div>
-              </button>
+              </div>
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`Delete "${g.name}"?`)) deleteGraph.mutate(g.id);
+                  deleteGraph.mutate(g.id);
                 }}
                 className="ml-4 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50"
               >
