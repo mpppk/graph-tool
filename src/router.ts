@@ -35,6 +35,16 @@ const graphGet = os.input(z.object({ id: z.string() })).handler(async ({ input }
   return graph;
 });
 
+const graphUpdateName = os
+  .input(z.object({ id: z.string(), name: z.string().min(1) }))
+  .handler(async ({ input }) => {
+    const db = getDb();
+    db.update(schema.graphs).set({ name: input.name }).where(eq(schema.graphs.id, input.id)).run();
+    const graph = db.select().from(schema.graphs).where(eq(schema.graphs.id, input.id)).get();
+    if (!graph) throw new Error(`Graph not found: ${input.id}`);
+    return graph;
+  });
+
 const graphDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
   const db = getDb();
   db.delete(schema.graphs).where(eq(schema.graphs.id, input.id)).run();
@@ -195,6 +205,7 @@ export const router = {
     list: graphList,
     create: graphCreate,
     get: graphGet,
+    updateName: graphUpdateName,
     delete: graphDelete,
   },
   node: {
