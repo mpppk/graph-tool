@@ -890,6 +890,7 @@ function GraphList({ onSelect }: { onSelect: (graph: Graph) => void }) {
   const [editingGraphId, setEditingGraphId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const singleClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     data: graphs = [],
@@ -984,9 +985,16 @@ function GraphList({ onSelect }: { onSelect: (graph: Graph) => void }) {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => onSelect(g)}
+                    onClick={() => {
+                      if (singleClickTimer.current) clearTimeout(singleClickTimer.current);
+                      singleClickTimer.current = setTimeout(() => onSelect(g), 250);
+                    }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
+                      if (singleClickTimer.current) {
+                        clearTimeout(singleClickTimer.current);
+                        singleClickTimer.current = null;
+                      }
                       setEditingDraft(g.name);
                       setEditingGraphId(g.id);
                       setTimeout(() => nameInputRef.current?.select(), 0);
