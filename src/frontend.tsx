@@ -87,6 +87,64 @@ async function computeElkLayout(
   return positions;
 }
 
+// ── Mermaid export ────────────────────────────────────────────────────────────
+
+function generateMermaidDiagram(nodes: RFNode[], edges: RFEdge[]): string {
+  const idMap = new Map<string, string>();
+  nodes.forEach((n, i) => idMap.set(n.id, `n${i}`));
+
+  function escapeMermaidLabel(text: string): string {
+    return text.replace(/"/g, "#quot;").replace(/\|/g, "#124;");
+  }
+
+  const nodeLines = nodes.map((n) => {
+    const mid = idMap.get(n.id)!;
+    const label = escapeMermaidLabel((n.data.label as string) || "(untitled)");
+    return `  ${mid}["${label}"]`;
+  });
+
+  const edgeLines = edges.flatMap((e) => {
+    const src = idMap.get(e.source);
+    const tgt = idMap.get(e.target);
+    if (!src || !tgt) return [];
+    const label = ((e.data?.label as string) ?? "").trim();
+    if (label) {
+      return [`  ${src} -->|"${escapeMermaidLabel(label)}"| ${tgt}`];
+    }
+    return [`  ${src} --> ${tgt}`];
+  });
+
+  const usedTypes = [
+    ...new Set(
+      nodes
+        .map((n) => n.data.nodeType as string | null | undefined)
+        .filter((t): t is string => !!t && t in NODE_TYPE_COLORS),
+    ),
+  ];
+
+  const classDefLines = usedTypes.map(
+    (t) => `  classDef ${t} fill:${NODE_TYPE_COLORS[t]},stroke:none,color:#ffffff`,
+  );
+
+  const classAssignLines = usedTypes.flatMap((t) => {
+    const matchingIds = nodes
+      .filter((n) => n.data.nodeType === t)
+      .map((n) => idMap.get(n.id)!)
+      .join(",");
+    return matchingIds ? [`  class ${matchingIds} ${t}`] : [];
+  });
+
+  return [
+    "graph TD",
+    ...nodeLines,
+    ...(edgeLines.length ? [""] : []),
+    ...edgeLines,
+    ...(classDefLines.length ? [""] : []),
+    ...classDefLines,
+    ...classAssignLines,
+  ].join("\n");
+}
+
 // ── EditableNode — カスタムノード（ダブルクリックでインライン編集） ────────────
 
 function EditableNode({ id, data, selected }: NodeProps) {
@@ -590,6 +648,7 @@ function GraphCanvas({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [mermaidCopied, setMermaidCopied] = useState(false);
 
   const updatePosition = useMutation({
     mutationFn: ({ id, x, y }: { id: string; x: number; y: number }) =>
@@ -746,6 +805,14 @@ function GraphCanvas({
     [updateEdgeLabel],
   );
 
+  const handleCopyMermaid = useCallback(() => {
+    const diagram = generateMermaidDiagram(nodes, edges);
+    navigator.clipboard.writeText(diagram).then(() => {
+      setMermaidCopied(true);
+      setTimeout(() => setMermaidCopied(false), 2000);
+    });
+  }, [nodes, edges]);
+
   const handleAutoLayout = useCallback(async () => {
     if (nodes.length === 0) return;
     const positions = await computeElkLayout(nodes, edges);
@@ -772,6 +839,13 @@ function GraphCanvas({
         <h1 className="font-semibold text-slate-800">{graph.name}</h1>
         {graph.description && <span className="text-sm text-slate-400">{graph.description}</span>}
         <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            onClick={handleCopyMermaid}
+            className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
+          >
+            {mermaidCopied ? "Copied!" : "Copy as Mermaid"}
+          </button>
           <button
             type="button"
             onClick={handleAutoLayout}
