@@ -1,3 +1,5 @@
+import { Database } from "bun:sqlite";
+import { drizzle as drizzleBunSqlite } from "drizzle-orm/bun-sqlite";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { runMigrations, runMigrationsAsync } from "./migrate";
 import { resolveDbPath } from "./path";
@@ -32,13 +34,11 @@ async function createDb(): Promise<Db> {
   }
 
   // ローカル bun:sqlite パス（バイナリ・CLI・CI smoke test はここを通る）
-  const { Database } = await import("bun:sqlite");
-  const { drizzle } = await import("drizzle-orm/bun-sqlite");
   const sqlite = new Database(resolveDbPath(), { create: true });
   sqlite.run("PRAGMA journal_mode = WAL");
   sqlite.run("PRAGMA foreign_keys = ON");
   runMigrations(sqlite);
-  return drizzle(sqlite, { schema }) as unknown as Db;
+  return drizzleBunSqlite(sqlite, { schema }) as unknown as Db;
 }
 
 export { schema };
