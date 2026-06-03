@@ -138,6 +138,64 @@ async function computeElkLayout(
   return positions;
 }
 
+// ── Mermaid export ────────────────────────────────────────────────────────────
+
+function generateMermaidDiagram(nodes: RFNode[], edges: RFEdge[]): string {
+  const idMap = new Map<string, string>();
+  nodes.forEach((n, i) => idMap.set(n.id, `n${i}`));
+
+  function escapeMermaidLabel(text: string): string {
+    return text.replace(/"/g, "#quot;").replace(/\|/g, "#124;");
+  }
+
+  const nodeLines = nodes.map((n) => {
+    const mid = idMap.get(n.id)!;
+    const label = escapeMermaidLabel((n.data.label as string) || "(untitled)");
+    return `  ${mid}["${label}"]`;
+  });
+
+  const edgeLines = edges.flatMap((e) => {
+    const src = idMap.get(e.source);
+    const tgt = idMap.get(e.target);
+    if (!src || !tgt) return [];
+    const label = ((e.data?.label as string) ?? "").trim();
+    if (label) {
+      return [`  ${src} -->|"${escapeMermaidLabel(label)}"| ${tgt}`];
+    }
+    return [`  ${src} --> ${tgt}`];
+  });
+
+  const usedTypes = [
+    ...new Set(
+      nodes
+        .map((n) => n.data.nodeType as string | null | undefined)
+        .filter((t): t is string => !!t && t in NODE_TYPE_COLORS),
+    ),
+  ];
+
+  const classDefLines = usedTypes.map(
+    (t) => `  classDef ${t} fill:${NODE_TYPE_COLORS[t]},stroke:none,color:#ffffff`,
+  );
+
+  const classAssignLines = usedTypes.flatMap((t) => {
+    const matchingIds = nodes
+      .filter((n) => n.data.nodeType === t)
+      .map((n) => idMap.get(n.id)!)
+      .join(",");
+    return matchingIds ? [`  class ${matchingIds} ${t}`] : [];
+  });
+
+  return [
+    "graph TD",
+    ...nodeLines,
+    ...(edgeLines.length ? [""] : []),
+    ...edgeLines,
+    ...(classDefLines.length ? [""] : []),
+    ...classDefLines,
+    ...classAssignLines,
+  ].join("\n");
+}
+
 // ── EditableNode — カスタムノード（ダブルクリックでインライン編集） ────────────
 
 function EditableNode({ id, data, selected }: NodeProps) {
@@ -647,6 +705,7 @@ function GraphCanvas({
   const layoutMenuRef = useRef<HTMLDivElement | null>(null);
   // 再配置後にビューを合わせるため ReactFlow インスタンスを保持
   const rfInstanceRef = useRef<ReturnType<typeof useReactFlow> | null>(null);
+  const [mermaidCopied, setMermaidCopied] = useState(false);
 
   // メニュー外クリックで閉じる
   useEffect(() => {
@@ -835,6 +894,14 @@ function GraphCanvas({
     [nodes, edges, setNodes, updatePosition],
   );
 
+  const handleCopyMermaid = useCallback(() => {
+    const diagram = generateMermaidDiagram(nodes, edges);
+    navigator.clipboard.writeText(diagram).then(() => {
+      setMermaidCopied(true);
+      setTimeout(() => setMermaidCopied(false), 2000);
+    });
+  }, [nodes, edges]);
+
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-3">
@@ -848,6 +915,13 @@ function GraphCanvas({
         <h1 className="font-semibold text-slate-800">{graph.name}</h1>
         {graph.description && <span className="text-sm text-slate-400">{graph.description}</span>}
         <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            onClick={handleCopyMermaid}
+            className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
+          >
+            {mermaidCopied ? "Copied!" : "Copy as Mermaid"}
+          </button>
           {/* 再配置: 分割ボタン（メインで直近アルゴリズムを再適用 / ▼でアルゴリズム選択） */}
           <div ref={layoutMenuRef} className="relative flex">
             <button
