@@ -58,18 +58,69 @@ const PREDEFINED_NODE_TYPES = Object.keys(NODE_TYPE_COLORS);
 
 const elk = new ELK();
 
+type LayoutAlgorithm = {
+  id: string;
+  label: string;
+  elkOptions: Record<string, string>;
+};
+
+// 既定（メインボタンで再適用する初期アルゴリズム）
+const DEFAULT_LAYOUT_ALGORITHM: LayoutAlgorithm = {
+  id: "layered",
+  label: "Layered (階層)",
+  elkOptions: {
+    "elk.algorithm": "layered",
+    "elk.direction": "DOWN",
+    "elk.spacing.nodeNode": "40",
+    "elk.layered.spacing.nodeNodeBetweenLayers": "60",
+  },
+};
+
+// 再配置で選択できるレイアウトアルゴリズム（ELK 対応）
+const LAYOUT_ALGORITHMS: LayoutAlgorithm[] = [
+  DEFAULT_LAYOUT_ALGORITHM,
+  {
+    id: "mrtree",
+    label: "Mr.Tree (木)",
+    elkOptions: {
+      "elk.algorithm": "mrtree",
+      "elk.spacing.nodeNode": "40",
+    },
+  },
+  {
+    id: "force",
+    label: "Force (力学)",
+    elkOptions: {
+      "elk.algorithm": "force",
+      "elk.spacing.nodeNode": "80",
+    },
+  },
+  {
+    id: "radial",
+    label: "Radial (放射状)",
+    elkOptions: {
+      "elk.algorithm": "radial",
+      "elk.spacing.nodeNode": "60",
+    },
+  },
+  {
+    id: "stress",
+    label: "Stress",
+    elkOptions: {
+      "elk.algorithm": "stress",
+      "elk.spacing.nodeNode": "80",
+    },
+  },
+];
+
 async function computeElkLayout(
   nodes: RFNode[],
   edges: RFEdge[],
+  layoutOptions: Record<string, string>,
 ): Promise<Map<string, { x: number; y: number }>> {
   const graph = {
     id: "root",
-    layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
-      "elk.spacing.nodeNode": "40",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "60",
-    },
+    layoutOptions,
     children: nodes.map((n) => ({ id: n.id, width: 160, height: 40 })),
     edges: edges.map((e) => ({
       id: e.id,
@@ -648,7 +699,25 @@ function GraphCanvas({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  // 再配置: 直近に使ったアルゴリズム（メインボタンで再適用）とメニュー開閉
+  const [selectedAlgo, setSelectedAlgo] = useState<LayoutAlgorithm>(DEFAULT_LAYOUT_ALGORITHM);
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
+  const layoutMenuRef = useRef<HTMLDivElement | null>(null);
+  // 再配置後にビューを合わせるため ReactFlow インスタンスを保持
+  const rfInstanceRef = useRef<ReturnType<typeof useReactFlow> | null>(null);
   const [mermaidCopied, setMermaidCopied] = useState(false);
+
+  // メニュー外クリックで閉じる
+  useEffect(() => {
+    if (!layoutMenuOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (layoutMenuRef.current && !layoutMenuRef.current.contains(e.target as Node)) {
+        setLayoutMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [layoutMenuOpen]);
 
   const updatePosition = useMutation({
     mutationFn: ({ id, x, y }: { id: string; x: number; y: number }) =>
@@ -805,6 +874,26 @@ function GraphCanvas({
     [updateEdgeLabel],
   );
 
+  const runLayout = useCallback(
+    async (algo: LayoutAlgorithm) => {
+      if (nodes.length === 0) return;
+      const positions = await computeElkLayout(nodes, edges, algo.elkOptions);
+      const updated = nodes.map((n) => {
+        const pos = positions.get(n.id);
+        return pos ? { ...n, position: pos } : n;
+      });
+      setNodes(updated);
+      for (const n of updated) {
+        updatePosition.mutate({ id: n.id, x: n.position.x, y: n.position.y });
+      }
+      // 新しい配置が画面内に収まるようビューを合わせる
+      requestAnimationFrame(() => {
+        rfInstanceRef.current?.fitView({ duration: 400, padding: 0.2 });
+      });
+    },
+    [nodes, edges, setNodes, updatePosition],
+  );
+
   const handleCopyMermaid = useCallback(() => {
     const diagram = generateMermaidDiagram(nodes, edges);
     navigator.clipboard.writeText(diagram).then(() => {
@@ -812,19 +901,6 @@ function GraphCanvas({
       setTimeout(() => setMermaidCopied(false), 2000);
     });
   }, [nodes, edges]);
-
-  const handleAutoLayout = useCallback(async () => {
-    if (nodes.length === 0) return;
-    const positions = await computeElkLayout(nodes, edges);
-    const updated = nodes.map((n) => {
-      const pos = positions.get(n.id);
-      return pos ? { ...n, position: pos } : n;
-    });
-    setNodes(updated);
-    for (const n of updated) {
-      updatePosition.mutate({ id: n.id, x: n.position.x, y: n.position.y });
-    }
-  }, [nodes, edges, setNodes, updatePosition]);
 
   return (
     <div className="flex h-screen flex-col">
@@ -846,13 +922,45 @@ function GraphCanvas({
           >
             {mermaidCopied ? "Copied!" : "Copy as Mermaid"}
           </button>
-          <button
-            type="button"
-            onClick={handleAutoLayout}
-            className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
-          >
-            Auto Layout
-          </button>
+          {/* 再配置: 分割ボタン（メインで直近アルゴリズムを再適用 / ▼でアルゴリズム選択） */}
+          <div ref={layoutMenuRef} className="relative flex">
+            <button
+              type="button"
+              onClick={() => runLayout(selectedAlgo)}
+              className="rounded-l-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
+            >
+              ⤢ 再配置: {selectedAlgo.label}
+            </button>
+            <button
+              type="button"
+              aria-label="レイアウトアルゴリズムを選択"
+              onClick={() => setLayoutMenuOpen((v) => !v)}
+              className="rounded-r-lg border border-l-0 border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
+            >
+              ▼
+            </button>
+            {layoutMenuOpen && (
+              <ul className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                {LAYOUT_ALGORITHMS.map((algo) => (
+                  <li key={algo.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAlgo(algo);
+                        setLayoutMenuOpen(false);
+                        runLayout(algo);
+                      }}
+                      className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50 ${
+                        algo.id === selectedAlgo.id ? "bg-slate-100 font-medium" : ""
+                      }`}
+                    >
+                      {algo.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button
             type="button"
             disabled={createNode.isPending}
@@ -884,6 +992,9 @@ function GraphCanvas({
             onEdgesDelete={onEdgesDelete}
             deleteKeyCode="Delete"
             fitView
+            onInit={(instance) => {
+              rfInstanceRef.current = instance;
+            }}
           >
             <Background />
             <Controls />
