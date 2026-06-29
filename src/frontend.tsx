@@ -903,7 +903,7 @@ function GraphCanvas({
   }, [nodes, edges]);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-3">
         <button
           type="button"
@@ -1039,7 +1039,7 @@ function GraphView({ graph, onBack }: { graph: Graph; onBack: () => void }) {
 
   if (nodesLoading || edgesLoading) {
     return (
-      <div className="flex h-screen items-center justify-center text-slate-400">Loading graph…</div>
+      <div className="flex h-dvh items-center justify-center text-slate-400">Loading graph…</div>
     );
   }
 
