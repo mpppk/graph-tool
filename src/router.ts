@@ -6,8 +6,8 @@ import { getDb, schema } from "./db";
 // ── Graph ──────────────────────────────────────────────────────────────────────
 
 const graphList = os.handler(async () => {
-  const db = getDb();
-  return db.select().from(schema.graphs).orderBy(schema.graphs.createdAt).all();
+  const db = await getDb();
+  return await db.select().from(schema.graphs).orderBy(schema.graphs.createdAt).all();
 });
 
 const graphCreate = os
@@ -18,19 +18,19 @@ const graphCreate = os
     }),
   )
   .handler(async ({ input }) => {
-    const db = getDb();
+    const db = await getDb();
     const id = crypto.randomUUID();
-    db.insert(schema.graphs)
+    await db.insert(schema.graphs)
       .values({ id, ...input })
       .run();
-    const graph = db.select().from(schema.graphs).where(eq(schema.graphs.id, id)).get();
+    const graph = await db.select().from(schema.graphs).where(eq(schema.graphs.id, id)).get();
     if (!graph) throw new Error("Failed to create graph");
     return graph;
   });
 
 const graphGet = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  const graph = db.select().from(schema.graphs).where(eq(schema.graphs.id, input.id)).get();
+  const db = await getDb();
+  const graph = await db.select().from(schema.graphs).where(eq(schema.graphs.id, input.id)).get();
   if (!graph) throw new Error(`Graph not found: ${input.id}`);
   return graph;
 });
@@ -38,24 +38,24 @@ const graphGet = os.input(z.object({ id: z.string() })).handler(async ({ input }
 const graphUpdateName = os
   .input(z.object({ id: z.string(), name: z.string().min(1) }))
   .handler(async ({ input }) => {
-    const db = getDb();
-    db.update(schema.graphs).set({ name: input.name }).where(eq(schema.graphs.id, input.id)).run();
-    const graph = db.select().from(schema.graphs).where(eq(schema.graphs.id, input.id)).get();
+    const db = await getDb();
+    await db.update(schema.graphs).set({ name: input.name }).where(eq(schema.graphs.id, input.id)).run();
+    const graph = await db.select().from(schema.graphs).where(eq(schema.graphs.id, input.id)).get();
     if (!graph) throw new Error(`Graph not found: ${input.id}`);
     return graph;
   });
 
 const graphDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  db.delete(schema.graphs).where(eq(schema.graphs.id, input.id)).run();
+  const db = await getDb();
+  await db.delete(schema.graphs).where(eq(schema.graphs.id, input.id)).run();
   return { success: true };
 });
 
 // ── Node ───────────────────────────────────────────────────────────────────────
 
 const nodeList = os.input(z.object({ graphId: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  return db.select().from(schema.nodes).where(eq(schema.nodes.graphId, input.graphId)).all();
+  const db = await getDb();
+  return await db.select().from(schema.nodes).where(eq(schema.nodes.graphId, input.graphId)).all();
 });
 
 const nodeCreate = os
@@ -68,12 +68,12 @@ const nodeCreate = os
     }),
   )
   .handler(async ({ input }) => {
-    const db = getDb();
+    const db = await getDb();
     const id = crypto.randomUUID();
-    db.insert(schema.nodes)
+    await db.insert(schema.nodes)
       .values({ id, ...input })
       .run();
-    const node = db.select().from(schema.nodes).where(eq(schema.nodes.id, id)).get();
+    const node = await db.select().from(schema.nodes).where(eq(schema.nodes.id, id)).get();
     if (!node) throw new Error("Failed to create node");
     return node;
   });
@@ -81,8 +81,8 @@ const nodeCreate = os
 const nodeUpdatePosition = os
   .input(z.object({ id: z.string(), x: z.number(), y: z.number() }))
   .handler(async ({ input }) => {
-    const db = getDb();
-    db.update(schema.nodes)
+    const db = await getDb();
+    await db.update(schema.nodes)
       .set({ x: input.x, y: input.y })
       .where(eq(schema.nodes.id, input.id))
       .run();
@@ -92,9 +92,9 @@ const nodeUpdatePosition = os
 const nodeUpdateLabel = os
   .input(z.object({ id: z.string(), label: z.string().min(1) }))
   .handler(async ({ input }) => {
-    const db = getDb();
-    db.update(schema.nodes).set({ label: input.label }).where(eq(schema.nodes.id, input.id)).run();
-    const node = db.select().from(schema.nodes).where(eq(schema.nodes.id, input.id)).get();
+    const db = await getDb();
+    await db.update(schema.nodes).set({ label: input.label }).where(eq(schema.nodes.id, input.id)).run();
+    const node = await db.select().from(schema.nodes).where(eq(schema.nodes.id, input.id)).get();
     if (!node) throw new Error(`Node not found: ${input.id}`);
     return node;
   });
@@ -102,27 +102,27 @@ const nodeUpdateLabel = os
 const nodeUpdateType = os
   .input(z.object({ id: z.string(), nodeType: z.string().nullable() }))
   .handler(async ({ input }) => {
-    const db = getDb();
-    db.update(schema.nodes)
+    const db = await getDb();
+    await db.update(schema.nodes)
       .set({ nodeType: input.nodeType })
       .where(eq(schema.nodes.id, input.id))
       .run();
-    const node = db.select().from(schema.nodes).where(eq(schema.nodes.id, input.id)).get();
+    const node = await db.select().from(schema.nodes).where(eq(schema.nodes.id, input.id)).get();
     if (!node) throw new Error(`Node not found: ${input.id}`);
     return node;
   });
 
 const nodeDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  db.delete(schema.nodes).where(eq(schema.nodes.id, input.id)).run();
+  const db = await getDb();
+  await db.delete(schema.nodes).where(eq(schema.nodes.id, input.id)).run();
   return { success: true };
 });
 
 // ── Node Metadata ──────────────────────────────────────────────────────────────
 
 const metadataList = os.input(z.object({ nodeId: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  return db
+  const db = await getDb();
+  return await db
     .select()
     .from(schema.nodeMetadata)
     .where(eq(schema.nodeMetadata.nodeId, input.nodeId))
@@ -132,34 +132,34 @@ const metadataList = os.input(z.object({ nodeId: z.string() })).handler(async ({
 const metadataUpsert = os
   .input(z.object({ nodeId: z.string(), key: z.string().min(1), value: z.string() }))
   .handler(async ({ input }) => {
-    const db = getDb();
+    const db = await getDb();
     const id = crypto.randomUUID();
-    db.run(
+    await db.run(
       sql`INSERT INTO node_metadata (id, node_id, key, value)
           VALUES (${id}, ${input.nodeId}, ${input.key}, ${input.value})
           ON CONFLICT(node_id, key) DO UPDATE SET value = excluded.value`,
     );
-    const row = db
+    const rows = await db
       .select()
       .from(schema.nodeMetadata)
       .where(eq(schema.nodeMetadata.nodeId, input.nodeId))
-      .all()
-      .find((m) => m.key === input.key);
+      .all();
+    const row = rows.find((m) => m.key === input.key);
     if (!row) throw new Error("Failed to upsert metadata");
     return row;
   });
 
 const metadataDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  db.delete(schema.nodeMetadata).where(eq(schema.nodeMetadata.id, input.id)).run();
+  const db = await getDb();
+  await db.delete(schema.nodeMetadata).where(eq(schema.nodeMetadata.id, input.id)).run();
   return { success: true };
 });
 
 // ── Edge ───────────────────────────────────────────────────────────────────────
 
 const edgeList = os.input(z.object({ graphId: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  return db.select().from(schema.edges).where(eq(schema.edges.graphId, input.graphId)).all();
+  const db = await getDb();
+  return await db.select().from(schema.edges).where(eq(schema.edges.graphId, input.graphId)).all();
 });
 
 const edgeCreate = os
@@ -172,12 +172,12 @@ const edgeCreate = os
     }),
   )
   .handler(async ({ input }) => {
-    const db = getDb();
+    const db = await getDb();
     const id = crypto.randomUUID();
-    db.insert(schema.edges)
+    await db.insert(schema.edges)
       .values({ id, ...input })
       .run();
-    const edge = db.select().from(schema.edges).where(eq(schema.edges.id, id)).get();
+    const edge = await db.select().from(schema.edges).where(eq(schema.edges.id, id)).get();
     if (!edge) throw new Error("Failed to create edge");
     return edge;
   });
@@ -185,16 +185,16 @@ const edgeCreate = os
 const edgeUpdateLabel = os
   .input(z.object({ id: z.string(), label: z.string() }))
   .handler(async ({ input }) => {
-    const db = getDb();
-    db.update(schema.edges).set({ label: input.label }).where(eq(schema.edges.id, input.id)).run();
-    const edge = db.select().from(schema.edges).where(eq(schema.edges.id, input.id)).get();
+    const db = await getDb();
+    await db.update(schema.edges).set({ label: input.label }).where(eq(schema.edges.id, input.id)).run();
+    const edge = await db.select().from(schema.edges).where(eq(schema.edges.id, input.id)).get();
     if (!edge) throw new Error(`Edge not found: ${input.id}`);
     return edge;
   });
 
 const edgeDelete = os.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-  const db = getDb();
-  db.delete(schema.edges).where(eq(schema.edges.id, input.id)).run();
+  const db = await getDb();
+  await db.delete(schema.edges).where(eq(schema.edges.id, input.id)).run();
   return { success: true };
 });
 

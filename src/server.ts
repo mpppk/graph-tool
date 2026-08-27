@@ -1,7 +1,7 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import index from "./index.html";
 import { router } from "./router";
-import { PORT } from "./runtime-config";
+import { HOST, PORT } from "./runtime-config";
 
 const rpcHandler = new RPCHandler(router);
 
@@ -22,6 +22,7 @@ export function notifyClients(event: string, data: unknown): void {
 export function startServer(): ReturnType<typeof Bun.serve> {
   const server = Bun.serve({
     port: PORT,
+    hostname: HOST,
 
     routes: {
       // ── Server-Sent Events ────────────────────────────────────────────────
@@ -67,6 +68,6 @@ export function startServer(): ReturnType<typeof Bun.serve> {
     development: process.env.NODE_ENV !== "production",
   });
 
-  console.log(`[graph-tool] Server running at http://localhost:${server.port}`);
+  console.log(`[graph-tool] Server running at ${server.url.href}`);
   return server;
 }

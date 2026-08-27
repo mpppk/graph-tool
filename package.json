@@ -16,6 +16,7 @@
     "check": "biome check src/"
   },
   "dependencies": {
+    "@libsql/client": "^0.15.0",
     "@orpc/client": "^1.0.0",
     "@orpc/server": "^1.0.0",
     "@tanstack/react-query": "^5.0.0",
@@ -34,6 +35,6 @@
     "bun-types": "latest",
     "playwright": "^1.60.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "6.0.3"
   }
 }

@@ -1,0 +1,101 @@
+name: PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  DB_NAME: graph-tool-pr-${{ github.event.number }}
+
+jobs:
+  deploy-preview:
+    name: Setup Preview DB
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+
+    steps:
+      - name: Install Turso CLI
+        run: |
+          curl -sSfL https://get.tur.so/install.sh | bash
+          echo "$HOME/.turso" >> $GITHUB_PATH
+
+      - name: Authenticate Turso CLI
+        run: turso auth login --token ${{ secrets.TURSO_API_TOKEN }}
+
+      - name: Create Turso database
+        run: turso db create ${{ env.DB_NAME }} || echo "DB may already exist, continuing"
+
+      - name: Get connection info
+        id: turso
+        run: |
+          DB_URL=$(turso db show ${{ env.DB_NAME }} --url)
+          DB_TOKEN=$(turso db tokens create ${{ env.DB_NAME }})
+          echo "url=$DB_URL" >> $GITHUB_OUTPUT
+          echo "::add-mask::$DB_TOKEN"
+          echo "token=$DB_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Post preview info to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '## Preview Environment',
+              '',
+              `**Database:** \`${{ env.DB_NAME }}\``,
+              `**Turso URL:** \`${{ steps.turso.outputs.url }}\``,
+              '',
+              '### Railway へのデプロイ手順',
+              'Railway の PR 環境に以下の環境変数を設定してください:',
+              '```',
+              `TURSO_URL=${{ steps.turso.outputs.url }}`,
+              'TURSO_AUTH_TOKEN=<steps.turso.outputs.token の値>',
+              'HOST=0.0.0.0',
+              'PORT=3000',
+              '```',
+              '',
+              '> `TURSO_AUTH_TOKEN` の値はこの Action の step output `turso.token` を参照してください。',
+              '> Railway API による自動設定は Railway アカウント設定後に追加予定。',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body?.includes('## Preview Environment'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  teardown-preview:
+    name: Teardown Preview DB
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+
+    steps:
+      - name: Install Turso CLI
+        run: |
+          curl -sSfL https://get.tur.so/install.sh | bash
+          echo "$HOME/.turso" >> $GITHUB_PATH
+
+      - name: Authenticate Turso CLI
+        run: turso auth login --token ${{ secrets.TURSO_API_TOKEN }}
+
+      - name: Destroy Turso database
+        run: turso db destroy ${{ env.DB_NAME }} --yes || echo "DB not found, skipping"
